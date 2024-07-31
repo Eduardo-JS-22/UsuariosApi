@@ -1,5 +1,10 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using UsuariosApi.Authorization;
 using UsuariosApi.Data;
 using UsuariosApi.Models;
 using UsuariosApi.Services;
@@ -8,14 +13,35 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-var connString = builder.Configuration.GetConnectionString("UsuarioConnection");
+var connString = builder.Configuration["ConnectionStrings:UsuarioConnection"];
+Console.WriteLine(connString);
 
 builder.Services.AddDbContext<UsuarioDbContext>(opts =>
 {
     opts.UseMySql(connString, ServerVersion.AutoDetect(connString));
 });
 
+builder.Services.AddSingleton<IAuthorizationHandler, IdadeAuthorization>();
 builder.Services.AddIdentity<Usuario, IdentityRole>().AddEntityFrameworkStores<UsuarioDbContext>().AddDefaultTokenProviders();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("IdadeMinima", policy => policy.AddRequirements(new IdadeMinima(18))); // Política de idade mínima de 18 anos
+});
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["SymmetricSecurityKey"])),
+        ValidateAudience = false,
+        ValidateIssuer = false,
+        ClockSkew = TimeSpan.Zero
+    };
+});
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 builder.Services.AddScoped<UsuarioService>();
@@ -36,7 +62,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
